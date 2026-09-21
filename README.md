@@ -9,9 +9,11 @@
 - 常见树节点和标签页交互
 - `TICKET` JSON Schema、站内消息、`SysOperator` 字典接口健康检查
 - 已知问题回归：
-  - 动态仪表盘接口返回 500
-  - Vue 路由切换触发 `nextSibling` 空引用错误
-  - 二次开发 HTML View 缺少渲染引擎
+- 动态仪表盘接口返回 500
+- Vue 路由切换触发 `nextSibling` 空引用错误
+- 二次开发 HTML View 缺少渲染引擎
+
+当前这三项已完成修复回归，`pnpm test:known` 预期全部通过。
 
 ## 运行
 
@@ -38,6 +40,14 @@ pnpm report
 
 默认账号是 `demo_admin / 123456`。需要覆盖时复制 `.env.example` 为 `.env` 后修改；`.env` 不会提交。
 
+跨机器运行时可通过环境变量覆盖入口和账号：
+
+```sh
+PLM_E2E_BASE_URL=http://127.0.0.1:4173/
+PLM_E2E_USERNAME=demo_admin
+PLM_E2E_PASSWORD=123456
+```
+
 ## 结果
 
 - HTML 报告：`playwright-report/index.html`
@@ -46,4 +56,4 @@ pnpm report
 
 报告和运行产物均已加入 `.gitignore`。
 
-`pnpm test` 默认排除 `@known-issue` 用例，用于验证当前应通过的功能。`pnpm test:known` 单独运行已知缺陷用例；在这些缺陷修复前，该命令预期失败，修复后对应用例应转为通过。
+`pnpm test` 默认排除 `@known-issue` 用例，用于验证当前应通过的功能。`pnpm test:known` 单独运行历史缺陷回归，当前预期全部通过。

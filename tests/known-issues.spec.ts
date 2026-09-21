@@ -20,6 +20,8 @@ test('secondary development HTML views should have an engine @known-issue', asyn
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await openMenu(page, '二次开发');
   await expect(page.locator('body')).toContainText('接口说明');
+  await expect(page.locator('iframe').first()).toBeVisible();
+  await expect(page.locator('iframe').first().contentFrame().locator('body')).not.toBeEmpty();
   expect(
     issues.consoleErrors.some(error => error.includes('没有VIEW_HtmlView对应的引擎')),
   ).toBe(false);
