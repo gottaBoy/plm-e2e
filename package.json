@@ -1,0 +1,19 @@
+{
+  "name": "plm-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Repeatable end-to-end tests for the local PLM web application.",
+  "scripts": {
+    "test": "playwright test",
+    "test:desktop": "playwright test --project=desktop",
+    "test:mobile": "playwright test --project=mobile",
+    "test:api": "playwright test tests/api-health.spec.ts",
+    "test:known": "PLM_E2E_INCLUDE_KNOWN=1 playwright test --grep @known-issue",
+    "report": "playwright show-report playwright-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.2",
+    "typescript": "^5.4.5"
+  },
+  "packageManager": "pnpm@8.15.9+sha512.499434c9d8fdd1a2794ebf4552b3b25c0a633abcee5bb15e7b5de90f32f47b513aca98cd5cfd001c31f0db454bc3804edccd578501e4ca293a6816166bbd9f81"
+}
