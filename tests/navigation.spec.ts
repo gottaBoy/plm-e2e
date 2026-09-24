@@ -1,10 +1,16 @@
 import { expect, test } from '@playwright/test';
-import { expectMainContent, expectNoHorizontalOverflow, menus, openMenu } from './helpers';
+import {
+  expectMainContent,
+  expectNoHorizontalOverflow,
+  gotoApp,
+  menus,
+  openMenu,
+} from './helpers';
 
 const expectedContent: Record<string, string[]> = {
   工作台: ['首页', '仪表盘', '工时', '概览', '待办'],
-  产品管理: ['test'],
-  项目管理: ['test'],
+  产品管理: ['全部产品', '暂无数据'],
+  项目管理: ['全部项目', '暂无数据'],
   测试管理: ['测试管理'],
   知识管理: ['产品生命周期管理系统'],
   效能度量: ['效能度量'],
@@ -18,7 +24,7 @@ const expectedContent: Record<string, string[]> = {
 
 for (const menu of menus) {
   test(`${menu} opens and renders`, async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await gotoApp(page);
     await openMenu(page, menu);
     await expectMainContent(page);
 

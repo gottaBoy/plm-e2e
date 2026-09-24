@@ -17,8 +17,17 @@ export const menus = [
 
 export type MenuName = (typeof menus)[number];
 
+export function appPath(path = '/') {
+  const base = process.env.PLM_E2E_APP_PATH || '/';
+  return `${base.replace(/\/$/, '')}${path}`;
+}
+
+export async function gotoApp(page: Page, path = '/') {
+  await page.goto(appPath(path), { waitUntil: 'domcontentloaded' });
+}
+
 export async function login(page: Page) {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await gotoApp(page);
   await page.waitForTimeout(3_000);
   await page.locator('input').first().fill(process.env.PLM_E2E_USERNAME || 'demo_admin');
   await page

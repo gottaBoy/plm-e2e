@@ -19,7 +19,7 @@
 
 前置条件：
 
-1. 本机安装 Google Chrome。
+1. 本机安装 Chrome 或 Playwright Chromium。
 2. PLM 前端运行在 `http://127.0.0.1:4173/`。
 3. 相关后端服务可访问：32003、30000、30251。
 
@@ -44,6 +44,8 @@ pnpm report
 
 ```sh
 PLM_E2E_BASE_URL=http://127.0.0.1:4173/
+PLM_E2E_APP_PATH=/
+PLM_E2E_CHANNEL=
 PLM_E2E_USERNAME=demo_admin
 PLM_E2E_PASSWORD=123456
 ```

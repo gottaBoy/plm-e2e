@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { menus, openMenu } from './helpers';
+import { gotoApp, menus, openMenu } from './helpers';
 
 test.beforeEach(() => {
   test.skip(test.info().project.name !== 'desktop', 'Interaction depth is covered on desktop');
@@ -8,7 +8,7 @@ test.beforeEach(() => {
 
 for (const menu of menus) {
   test(`${menu} common navigation controls`, async ({ page }) => {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await gotoApp(page);
   await openMenu(page, menu);
 
   const treeNodes = page.locator('.el-tree-node__content:visible');
