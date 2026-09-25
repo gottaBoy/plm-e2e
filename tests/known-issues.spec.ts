@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { authHeaders, issueCollector, openMenu } from './helpers';
+import { appPath, authHeaders, issueCollector, openMenu } from './helpers';
 
 test.beforeEach(() => {
   test.skip(test.info().project.name !== 'desktop', 'Known issues are currently desktop regressions');
@@ -17,7 +17,7 @@ test('dynamic dashboard API should return data @known-issue', async ({ page }) =
 
 test('secondary development HTML views should have an engine @known-issue', async ({ page }) => {
   const issues = issueCollector(page);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto(appPath(), { waitUntil: 'domcontentloaded' });
   await openMenu(page, '二次开发');
   await expect(page.locator('body')).toContainText('接口说明');
   await expect(page.locator('iframe').first()).toBeVisible();
@@ -29,7 +29,7 @@ test('secondary development HTML views should have an engine @known-issue', asyn
 
 test('first-level route transitions should not emit a Vue nextSibling error @known-issue', async ({ page }) => {
   const issues = issueCollector(page);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto(appPath(), { waitUntil: 'domcontentloaded' });
   await openMenu(page, '产品管理');
   await openMenu(page, '项目管理');
 
