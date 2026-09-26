@@ -1,5 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Two suites are opt-in because both are slow or known-failing: the regression
+// probes tagged @known-issue, and the deep sweep tagged @deep-sweep, which walks
+// every tree node and tab and takes about twelve minutes per base URL.
+const excluded = [
+  [process.env.PLM_E2E_INCLUDE_KNOWN, '@known-issue'],
+  [process.env.PLM_E2E_INCLUDE_SWEEP, '@deep-sweep'],
+]
+  .filter(([included]) => !included)
+  .map(([, tag]) => tag);
+
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
@@ -8,7 +18,7 @@ export default defineConfig({
   },
   fullyParallel: false,
   workers: 1,
-  grepInvert: process.env.PLM_E2E_INCLUDE_KNOWN ? undefined : /@known-issue/,
+  grepInvert: excluded.length ? new RegExp(excluded.join('|')) : undefined,
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],

@@ -35,6 +35,7 @@ pnpm test:desktop
 pnpm test:mobile
 pnpm test:api
 pnpm test:known
+pnpm test:sweep
 pnpm report
 ```
 
@@ -58,4 +59,9 @@ PLM_E2E_PASSWORD=123456
 
 报告和运行产物均已加入 `.gitignore`。
 
-`pnpm test` 默认排除 `@known-issue` 用例，用于验证当前应通过的功能。`pnpm test:known` 单独运行历史缺陷回归，当前预期全部通过。
+`pnpm test` 默认排除 `@known-issue` 与 `@deep-sweep` 用例，用于快速验证当前应通过的功能。
+
+`pnpm test:known` 单独运行历史缺陷回归，当前预期全部通过。
+
+`pnpm test:sweep` 逐个点击 12 个一级菜单下的全部树节点和标签页（实测约 95 个节点、44 个标签页），
+每次运行约 12 分钟，用于全功能巡检。用例通过 `sweep` 注解输出各菜单实际访问的节点与标签页清单。

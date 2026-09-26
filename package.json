@@ -9,7 +9,8 @@
     "test:mobile": "playwright test --project=mobile",
     "test:api": "playwright test tests/api-health.spec.ts",
     "test:known": "PLM_E2E_INCLUDE_KNOWN=1 playwright test --grep @known-issue",
-    "report": "playwright show-report playwright-report"
+    "report": "playwright show-report playwright-report",
+    "test:sweep": "PLM_E2E_INCLUDE_SWEEP=1 playwright test --grep @deep-sweep"
   },
   "devDependencies": {
     "@playwright/test": "^1.41.2",
