@@ -18,8 +18,16 @@ export const menus = [
 export type MenuName = (typeof menus)[number];
 
 export function appPath(path = '/') {
-  const base = process.env.PLM_E2E_APP_PATH || '/';
-  return `${base.replace(/\/$/, '')}${path}`;
+  const configured = process.env.PLM_E2E_APP_PATH;
+  const base =
+    configured ||
+    (() => {
+      const baseUrl = process.env.PLM_E2E_BASE_URL || 'http://127.0.0.1:4173/';
+      return new URL(baseUrl).pathname;
+    })();
+  const normalizedBase = `/${base.replace(/^\/|\/$/g, '')}`;
+  const normalizedPath = path === '/' ? '' : `/${path.replace(/^\/+/, '')}`;
+  return `${normalizedBase}${normalizedPath}/`.replace(/\/+/g, '/');
 }
 
 export async function gotoApp(page: Page, path = '/') {

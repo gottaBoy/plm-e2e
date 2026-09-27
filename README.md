@@ -1,6 +1,6 @@
 # PLM E2E
 
-独立的 PLM 前端端到端测试项目，用于重复验证 `http://127.0.0.1:4173/` 的登录、一级功能、接口路由、移动端布局和已知问题回归。
+独立的 PLM 前端端到端测试项目，用于重复验证 `http://127.0.0.1:30250/ibizplm-plmweb/` 的登录、一级功能、接口路由、移动端布局和已知问题回归。
 
 ## 范围
 
@@ -20,7 +20,7 @@
 前置条件：
 
 1. 本机安装 Chrome 或 Playwright Chromium。
-2. PLM 前端运行在 `http://127.0.0.1:4173/`。
+2. PLM 前端运行在 `http://127.0.0.1:30250/ibizplm-plmweb/`。
 3. 相关后端服务可访问：32003、30000、30251。
 
 ```sh
@@ -44,8 +44,9 @@ pnpm report
 跨机器运行时可通过环境变量覆盖入口和账号：
 
 ```sh
-PLM_E2E_BASE_URL=http://127.0.0.1:4173/
-PLM_E2E_APP_PATH=/
+PLM_E2E_BASE_URL=http://127.0.0.1:30250/ibizplm-plmweb/
+# 可留空；测试会从 PLM_E2E_BASE_URL 自动推导。
+PLM_E2E_APP_PATH=
 PLM_E2E_CHANNEL=
 PLM_E2E_USERNAME=demo_admin
 PLM_E2E_PASSWORD=123456

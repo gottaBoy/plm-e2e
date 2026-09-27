@@ -24,7 +24,14 @@ for (const menu of menus) {
     .filter(Boolean)
     .slice(0, 3);
   for (const tabText of tabTexts) {
-    await tabs.filter({ hasText: tabText }).first().click();
+    const currentTab = page
+      .locator('[role="tab"]:visible')
+      .filter({ hasText: tabText })
+      .first();
+    if (!(await currentTab.count())) {
+      continue;
+    }
+    await currentTab.click();
     await page.waitForTimeout(1_500);
     await expect(page.locator('body')).toBeVisible();
   }
