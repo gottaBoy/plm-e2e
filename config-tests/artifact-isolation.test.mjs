@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
@@ -9,6 +17,7 @@ import ts from 'typescript';
 
 const require = createRequire(import.meta.url);
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+const mobileGate = path.join(repoRoot, 'scripts/mobile-skip-gate.mjs');
 
 function evaluate(relativePath, { env = {}, dependencies = {} } = {}) {
   const filename = path.join(repoRoot, relativePath);
@@ -41,6 +50,78 @@ function artifactPaths(config) {
     config.reporter.find(([name]) => name === 'html')[1].outputFolder,
     config.reporter.find(([name]) => name === 'json')[1].outputFile,
     config.metadata.storageState,
+  ];
+}
+
+function createTest({ projectName, status, title, file = 'interactions.spec.ts' }) {
+  const resultStatus =
+    status === 'skipped' ? 'skipped' : status === 'expected' ? 'passed' : 'failed';
+  const results =
+    status === 'flaky'
+      ? [{ status: 'failed' }, { status: 'passed' }]
+      : [{ status: resultStatus }];
+  return {
+    file,
+    spec: {
+      title,
+      tests: [{ projectName, status, results }],
+    },
+  };
+}
+
+function createReport({ mobileTests = [], setupTests = [], desktopTests = [] } = {}) {
+  const testsByFile = new Map();
+  for (const item of [...setupTests, ...desktopTests, ...mobileTests]) {
+    if (!testsByFile.has(item.file)) testsByFile.set(item.file, []);
+    testsByFile.get(item.file).push(item.spec);
+  }
+
+  return {
+    suites: [...testsByFile].map(([file, specs]) => ({ file, specs })),
+    stats: {
+      expected: 0,
+      skipped: 0,
+      unexpected: 99,
+      flaky: 99,
+    },
+  };
+}
+
+function writeReport(artifactDir, report) {
+  const reportFile = path.join(artifactDir, 'reports', 'test-results.json');
+  mkdirSync(path.dirname(reportFile), { recursive: true });
+  writeFileSync(reportFile, JSON.stringify(report));
+  return reportFile;
+}
+
+function runMobileGate({ artifactDir, reportFile } = {}) {
+  const env = { ...process.env };
+  delete env.PLM_E2E_ARTIFACT_DIR;
+  delete env.PLM_E2E_REPORT_FILE;
+  if (artifactDir) env.PLM_E2E_ARTIFACT_DIR = artifactDir;
+  if (reportFile) env.PLM_E2E_REPORT_FILE = reportFile;
+  return spawnSync(process.execPath, [mobileGate], {
+    cwd: repoRoot,
+    env,
+    encoding: 'utf8',
+  });
+}
+
+function approvedMobileSkips() {
+  return [
+    ...Array.from({ length: 12 }, (_, index) =>
+      createTest({
+        projectName: 'mobile',
+        status: 'skipped',
+        title: `菜单 ${index + 1} common navigation controls`,
+      }),
+    ),
+    createTest({
+      projectName: 'mobile',
+      status: 'skipped',
+      title: 'person select plugin loads its config and assets',
+      file: 'person-select.spec.ts',
+    }),
   ];
 }
 
@@ -124,4 +205,142 @@ test('authentication setup writes only the storageState supplied by its invocati
     authenticate({ page }, { config: { metadata: {} } }),
     /Missing invocation-specific storageState/,
   );
+});
+
+test('mobile skip gate reads the selected artifact instead of a stale report', () => {
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'plm-mobile-gate-'));
+  try {
+    const oldArtifact = path.join(tempRoot, 'old-run');
+    const currentArtifact = path.join(tempRoot, 'current-run');
+    const oldReport = writeReport(
+      oldArtifact,
+      createReport({
+        mobileTests: [
+          createTest({
+            projectName: 'mobile',
+            status: 'skipped',
+            title: 'unapproved mobile test',
+            file: 'navigation.spec.ts',
+          }),
+        ],
+      }),
+    );
+    const currentReport = writeReport(
+      currentArtifact,
+      createReport({
+        mobileTests: [
+          ...approvedMobileSkips(),
+          createTest({
+            projectName: 'mobile',
+            status: 'expected',
+            title: 'mobile navigation smoke',
+            file: 'navigation.spec.ts',
+          }),
+        ],
+        setupTests: [
+          createTest({
+            projectName: 'setup',
+            status: 'unexpected',
+            title: 'authenticate local PLM',
+            file: 'auth.setup.ts',
+          }),
+          createTest({
+            projectName: 'setup',
+            status: 'skipped',
+            title: 'setup-only skipped test',
+            file: 'auth.setup.ts',
+          }),
+        ],
+        desktopTests: [
+          createTest({
+            projectName: 'desktop',
+            status: 'unexpected',
+            title: 'desktop-only failure',
+          }),
+          createTest({
+            projectName: 'desktop',
+            status: 'skipped',
+            title: 'desktop-only skipped test',
+          }),
+        ],
+      }),
+    );
+
+    const result = runMobileGate({
+      artifactDir: currentArtifact,
+      reportFile: oldReport,
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      new RegExp(
+        `PASS mobile skip capability gate: skipped=13 allowed=13 unexpected=0 flaky=0 report=${currentReport.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+      ),
+    );
+    assert.doesNotMatch(result.stdout, /unapproved mobile test/);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('mobile skip gate counts mobile unexpected and flaky tests and rejects them', () => {
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'plm-mobile-gate-'));
+  try {
+    const reportFile = writeReport(
+      tempRoot,
+      createReport({
+        mobileTests: [
+          ...approvedMobileSkips(),
+          createTest({
+            projectName: 'mobile',
+            status: 'unexpected',
+            title: 'mobile unexpected test',
+            file: 'navigation.spec.ts',
+          }),
+          createTest({
+            projectName: 'mobile',
+            status: 'flaky',
+            title: 'mobile flaky test',
+            file: 'navigation.spec.ts',
+          }),
+        ],
+      }),
+    );
+    const result = runMobileGate({ reportFile });
+
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /FAIL mobile skip capability gate: skipped=13 unexpected=1 flaky=1 .*unexpected=1; flaky=1/,
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('mobile skip gate rejects unapproved skips from a directly selected report', () => {
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'plm-mobile-gate-'));
+  try {
+    const reportFile = writeReport(
+      tempRoot,
+      createReport({
+        mobileTests: [
+          ...approvedMobileSkips(),
+          createTest({
+            projectName: 'mobile',
+            status: 'skipped',
+            title: 'unapproved mobile test',
+            file: 'navigation.spec.ts',
+          }),
+        ],
+      }),
+    );
+    const result = runMobileGate({ reportFile });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unapproved skip: navigation\.spec\.ts :: unapproved mobile test/);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });

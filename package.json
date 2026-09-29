@@ -7,12 +7,14 @@
     "test": "playwright test",
     "test:desktop": "playwright test --project=desktop",
     "test:mobile": "playwright test --project=mobile",
+    "test:mobile:skip-gate": "node scripts/mobile-skip-gate.mjs",
     "test:api": "playwright test tests/api-health.spec.ts",
     "test:known": "PLM_E2E_INCLUDE_KNOWN=1 playwright test --grep @known-issue",
     "report": "playwright show-report",
     "test:sweep": "PLM_E2E_INCLUDE_SWEEP=1 playwright test --grep @deep-sweep",
     "test:sweep:workspace": "PLM_E2E_INCLUDE_SWEEP=1 playwright test tests/deep-feature-sweep.spec.ts --project=desktop --grep '工作台 .*@deep-sweep'",
-    "test:config": "node --test config-tests/artifact-isolation.test.mjs"
+    "test:config": "node --test config-tests/artifact-isolation.test.mjs",
+    "test:harness-ui": "node ../scripts/external-ui-harness.mjs --required"
   },
   "devDependencies": {
     "@playwright/test": "^1.41.2",
