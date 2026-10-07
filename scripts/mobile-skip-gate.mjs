@@ -16,49 +16,34 @@ if (!reportFile) {
   process.exit(2);
 }
 
-const rules = [
-  {
-    file: 'interactions.spec.ts',
-    title: /^[\s\S]+ common navigation controls$/,
-    count: 12,
-    reason: 'desktop-only interaction coverage',
-  },
-  {
-    file: 'person-select.spec.ts',
-    title: /^person select plugin loads its config and assets$/,
-    count: 1,
-    reason: 'plugin loading coverage is desktop-only',
-  },
-];
-
 function getTestStatus(test) {
   const resultStatuses = (test.results || []).map(result => result.status);
 
   if (test.status === 'skipped' || resultStatuses.includes('skipped')) return 'skipped';
   if (test.status === 'flaky') return 'flaky';
-  if (test.status === 'unexpected') return 'unexpected';
-  if (test.status === 'expected') return 'expected';
-  if (resultStatuses.includes('failed')) {
-    return resultStatuses.includes('passed') ? 'flaky' : 'unexpected';
-  }
+  if (resultStatuses.includes('passed') && resultStatuses.some(status => status !== 'passed')) return 'flaky';
+  if (test.status !== 'expected' || test.expectedStatus !== 'passed') return 'unexpected';
+  if (test.results?.length !== 1 || resultStatuses[0] !== 'passed') return 'unexpected';
+  if (test.results[0].error || (test.results[0].errors || []).length > 0) return 'unexpected';
+  if (test.results[0].retry !== undefined && test.results[0].retry !== 0) return 'unexpected';
   return 'expected';
 }
 
-function collectMobileTests(suites, inheritedFile = '') {
+function collectTests(suites, projectName, inheritedFile = '') {
   const tests = [];
   for (const suite of suites || []) {
     const file = suite.file || (suite.title?.endsWith('.spec.ts') ? suite.title : inheritedFile);
     for (const spec of suite.specs || []) {
       for (const test of spec.tests || []) {
-        if (test.projectName !== 'mobile') continue;
+        if (test.projectName !== projectName) continue;
         tests.push({
-          file,
+          file: spec.file || file,
           title: spec.title,
           status: getTestStatus(test),
         });
       }
     }
-    tests.push(...collectMobileTests(suite.suites, file));
+    tests.push(...collectTests(suite.suites, projectName, file));
   }
   return tests;
 }
@@ -71,7 +56,7 @@ try {
   process.exit(2);
 }
 
-const mobileTests = collectMobileTests(report.suites);
+const mobileTests = collectTests(report.suites, 'mobile');
 const mobileStats = mobileTests.reduce(
   (stats, test) => {
     stats[test.status] += 1;
@@ -82,6 +67,13 @@ const mobileStats = mobileTests.reduce(
 const skipped = mobileTests.filter(test => test.status === 'skipped');
 const failures = [];
 
+if (!Array.isArray(report.suites)) failures.push('invalid report suites');
+if (report.errors !== undefined && (!Array.isArray(report.errors) || report.errors.length !== 0)) {
+  failures.push('report-level errors');
+}
+for (const item of collectTests(report.suites, 'setup')) {
+  if (item.status !== 'expected') failures.push(`setup did not pass: ${item.file} :: ${item.title}`);
+}
 if (mobileTests.length === 0) {
   failures.push('no mobile tests found');
 }
@@ -93,19 +85,7 @@ if (mobileStats.flaky !== 0) {
 }
 
 for (const item of skipped) {
-  const rule = rules.find(candidate => candidate.file === item.file && candidate.title.test(item.title));
-  if (!rule) failures.push(`unapproved skip: ${item.file} :: ${item.title}`);
-}
-
-for (const rule of rules) {
-  const actual = skipped.filter(
-    item => item.file === rule.file && rule.title.test(item.title),
-  ).length;
-  if (actual !== rule.count) {
-    failures.push(
-      `${rule.file} expected ${rule.count} skip(s) for ${rule.reason}, found ${actual}`,
-    );
-  }
+  failures.push(`unapproved skip: ${item.file} :: ${item.title}`);
 }
 
 if (failures.length > 0) {
@@ -119,7 +99,7 @@ if (failures.length > 0) {
 
 console.log(
   `PASS mobile skip capability gate: skipped=${mobileStats.skipped} ` +
-    `allowed=${rules.reduce((total, rule) => total + rule.count, 0)} ` +
+    `allowed=0 ` +
     `unexpected=${mobileStats.unexpected} flaky=${mobileStats.flaky} ` +
     `report=${path.resolve(reportFile)}`,
 );

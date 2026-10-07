@@ -64,7 +64,7 @@ function createTest({ projectName, status, title, file = 'interactions.spec.ts' 
     file,
     spec: {
       title,
-      tests: [{ projectName, status, results }],
+      tests: [{ projectName, expectedStatus: 'passed', status, results }],
     },
   };
 }
@@ -105,24 +105,6 @@ function runMobileGate({ artifactDir, reportFile } = {}) {
     env,
     encoding: 'utf8',
   });
-}
-
-function approvedMobileSkips() {
-  return [
-    ...Array.from({ length: 12 }, (_, index) =>
-      createTest({
-        projectName: 'mobile',
-        status: 'skipped',
-        title: `菜单 ${index + 1} common navigation controls`,
-      }),
-    ),
-    createTest({
-      projectName: 'mobile',
-      status: 'skipped',
-      title: 'person select plugin loads its config and assets',
-      file: 'person-select.spec.ts',
-    }),
-  ];
 }
 
 test('independent invocations isolate output, both reports and authentication', () => {
@@ -229,7 +211,6 @@ test('mobile skip gate reads the selected artifact instead of a stale report', (
       currentArtifact,
       createReport({
         mobileTests: [
-          ...approvedMobileSkips(),
           createTest({
             projectName: 'mobile',
             status: 'expected',
@@ -240,14 +221,8 @@ test('mobile skip gate reads the selected artifact instead of a stale report', (
         setupTests: [
           createTest({
             projectName: 'setup',
-            status: 'unexpected',
+            status: 'expected',
             title: 'authenticate local PLM',
-            file: 'auth.setup.ts',
-          }),
-          createTest({
-            projectName: 'setup',
-            status: 'skipped',
-            title: 'setup-only skipped test',
             file: 'auth.setup.ts',
           }),
         ],
@@ -275,7 +250,7 @@ test('mobile skip gate reads the selected artifact instead of a stale report', (
     assert.match(
       result.stdout,
       new RegExp(
-        `PASS mobile skip capability gate: skipped=13 allowed=13 unexpected=0 flaky=0 report=${currentReport.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+        `PASS mobile skip capability gate: skipped=0 allowed=0 unexpected=0 flaky=0 report=${currentReport.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
       ),
     );
     assert.doesNotMatch(result.stdout, /unapproved mobile test/);
@@ -291,7 +266,12 @@ test('mobile skip gate counts mobile unexpected and flaky tests and rejects them
       tempRoot,
       createReport({
         mobileTests: [
-          ...approvedMobileSkips(),
+          createTest({
+            projectName: 'mobile',
+            status: 'expected',
+            title: 'mobile navigation smoke',
+            file: 'navigation.spec.ts',
+          }),
           createTest({
             projectName: 'mobile',
             status: 'unexpected',
@@ -312,7 +292,7 @@ test('mobile skip gate counts mobile unexpected and flaky tests and rejects them
     assert.equal(result.status, 1);
     assert.match(
       result.stderr,
-      /FAIL mobile skip capability gate: skipped=13 unexpected=1 flaky=1 .*unexpected=1; flaky=1/,
+      /FAIL mobile skip capability gate: skipped=0 unexpected=1 flaky=1 .*unexpected=1; flaky=1/,
     );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
@@ -326,7 +306,12 @@ test('mobile skip gate rejects unapproved skips from a directly selected report'
       tempRoot,
       createReport({
         mobileTests: [
-          ...approvedMobileSkips(),
+          createTest({
+            projectName: 'mobile',
+            status: 'expected',
+            title: 'mobile navigation smoke',
+            file: 'navigation.spec.ts',
+          }),
           createTest({
             projectName: 'mobile',
             status: 'skipped',
@@ -342,5 +327,50 @@ test('mobile skip gate rejects unapproved skips from a directly selected report'
     assert.match(result.stderr, /unapproved skip: navigation\.spec\.ts :: unapproved mobile test/);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('mobile gate rejects contradictory labels, missing executions, timeouts and expected failures', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'plm-mobile-fail-closed-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const cases = [
+    { status: 'expected', results: [{ status: 'failed' }] },
+    { status: 'expected', results: [{ status: 'timedOut' }] },
+    { status: 'expected', results: [{ status: 'interrupted' }] },
+    { status: 'expected', results: [] },
+    { status: 'expected', results: undefined },
+    { status: undefined, results: [{ status: 'passed' }] },
+    { expectedStatus: 'failed', results: [{ status: 'passed' }] },
+    { expectedStatus: undefined, results: [{ status: 'passed' }] },
+    { results: [{ status: 'passed', errors: [{ message: 'late error' }] }] },
+    { results: [{ status: 'passed', error: { message: 'late error' } }] },
+    { results: [{ status: 'passed', retry: 1 }] },
+    { results: [{ status: 'failed' }, { status: 'passed' }] },
+    { results: [{ status: 'passed' }, { status: 'passed' }] },
+  ];
+  for (const [index, overrides] of cases.entries()) {
+    const entry = createTest({ projectName: 'mobile', status: 'expected', title: 'strict mobile' });
+    Object.assign(entry.spec.tests[0], overrides);
+    const reportFile = writeReport(path.join(root, String(index)), createReport({ mobileTests: [entry] }));
+    const result = runMobileGate({ reportFile });
+    assert.equal(result.status, 1, `case ${index}: ${result.stdout} ${result.stderr}`);
+    assert.match(result.stderr, /FAIL mobile skip capability gate/);
+  }
+});
+
+test('mobile gate rejects runner errors and failed or skipped authentication even with passing mobile rows', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'plm-mobile-runner-errors-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const [index, setupStatus] of ['expected', 'unexpected', 'skipped'].entries()) {
+    const report = createReport({
+      mobileTests: [createTest({ projectName: 'mobile', status: 'expected', title: 'mobile' })],
+      setupTests: [createTest({
+        projectName: 'setup', status: setupStatus, title: 'authenticate', file: 'auth.setup.ts',
+      })],
+    });
+    if (setupStatus === 'expected') report.errors = [{ message: 'global teardown failed' }];
+    const result = runMobileGate({ reportFile: writeReport(path.join(root, String(index)), report) });
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, /report-level errors|setup did not pass/);
   }
 });

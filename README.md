@@ -33,9 +33,13 @@ pnpm test
 ```sh
 pnpm test:desktop
 pnpm test:mobile
+pnpm test:mobile:skip-gate
 pnpm test:api
 pnpm test:known
 pnpm test:sweep
+pnpm test:sweep:workspace
+pnpm test:config
+pnpm test:harness-ui
 pnpm report
 ```
 
@@ -66,3 +70,53 @@ PLM_E2E_PASSWORD=123456
 
 `pnpm test:sweep` 逐个点击 12 个一级菜单下的全部树节点和标签页（实测约 95 个节点、44 个标签页），
 每次运行约 12 分钟，用于全功能巡检。用例通过 `sweep` 注解输出各菜单实际访问的节点与标签页清单。
+
+`pnpm test:mobile:skip-gate` 必须在 `pnpm test:mobile` 后执行。它读取本次
+Playwright JSON 报告，要求移动端零 skip、零 unexpected、零 flaky。
+
+`pnpm test:sweep:workspace` 只运行工作台范围的深度扫描，适合定位问题；
+完整验收仍应运行 `pnpm test:sweep`。
+
+`pnpm test:config` 验证 `PLM_E2E_ARTIFACT_DIR`、HTML/JSON 报告和认证状态文件
+不会落到其他并发运行目录。推荐每次运行显式设置独立目录：
+
+```sh
+export PLM_E2E_ARTIFACT_DIR=/home/my/workspace/ainfra/aibiz/.artifacts/plm-e2e/$(date +%Y%m%d-%H%M%S)
+pnpm test
+```
+
+测试资产包括：
+
+- `tests/modeling-ide.spec.ts`
+- `tests/resource-gantt.spec.ts`
+- `config-tests/artifact-isolation.test.mjs`
+- `scripts/mobile-skip-gate.mjs`
+
+默认 `pnpm test` 排除 `@known-issue` 和 `@deep-sweep`；这是命令设计，不是
+缺失覆盖。完整回归必须额外执行 `pnpm test:known` 和 `pnpm test:sweep`。
+移动端报告中任何 skip 都不算 pass，且会使能力门槛失败。
+
+## 证据约定
+
+JSON、HTML、截图和 trace 默认写入
+`.artifacts/<run-id>/reports`、`.artifacts/<run-id>/test-results` 和
+`.artifacts/<run-id>/playwright`。不要把仓库根目录已有的
+`reports/test-results.json` 当作最新证据：当前该文件是含失败的历史
+deep-sweep 输出。
+
+已确认的通过证据：
+
+- `.artifacts/plm-e2e-final/reports/test-results.json`：
+  `40 passed, 13 skipped, 0 unexpected`。
+- `.artifacts/plm-e2e-matrix-known-20260928/reports/test-results.json`：
+  `4 passed, 0 unexpected`。
+- `.artifacts/plm-full-flow-e2e/desktop/reports/test-results.json`：
+  `27 passed, 0 unexpected`。
+- `.artifacts/plm-full-flow-e2e/mobile/reports/test-results.json`：
+  `14 passed, 13 skipped, 0 unexpected`。
+- `.artifacts/plm-full-flow-e2e/deep-sweep/reports/test-results.json`：
+  `13 passed, 0 unexpected`。
+
+`.artifacts/plm-audit-20260929-desktop/reports/test-results.json` 含 1 个
+失败，不能写入“桌面端已通过”的结论。`SKIP` 必须与允许规则或环境缺失原因
+一起记录。
