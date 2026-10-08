@@ -1,10 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { appPath, authHeaders, issueCollector, openMenu } from './helpers';
 
-test.beforeEach(() => {
-  test.skip(test.info().project.name !== 'desktop', 'Known issues are currently desktop regressions');
-});
-
 test('dynamic dashboard API should return data @known-issue', async ({ page }) => {
   const request = page.request;
   const headers = await authHeaders(page);

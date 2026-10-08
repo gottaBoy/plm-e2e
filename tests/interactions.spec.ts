@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { gotoApp, menus, openMenu } from './helpers';
+import { clickTab, gotoApp, menus, openMenu } from './helpers';
 
 test.beforeEach(() => {
-  test.skip(test.info().project.name !== 'desktop', 'Interaction depth is covered on desktop');
   test.setTimeout(120_000);
 });
 
@@ -31,7 +30,10 @@ for (const menu of menus) {
     if (!(await currentTab.count())) {
       continue;
     }
-    await currentTab.click();
+    if ((await currentTab.getAttribute('aria-selected')) === 'true') {
+      continue;
+    }
+    await clickTab(currentTab);
     await page.waitForTimeout(1_500);
     await expect(page.locator('body')).toBeVisible();
   }

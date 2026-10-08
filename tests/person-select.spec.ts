@@ -22,10 +22,6 @@ function collectPluginLoading(page: Page) {
   return { pluginRequests, consoleErrors };
 }
 
-test.beforeEach(() => {
-  test.skip(test.info().project.name !== 'desktop', 'Plugin loading is covered on desktop');
-});
-
 test('person select plugin loads its config and assets', async ({ page }) => {
   const { pluginRequests, consoleErrors } = collectPluginLoading(page);
 

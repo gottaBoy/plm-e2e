@@ -1,4 +1,4 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, type Locator, Page, test } from '@playwright/test';
 
 export const menus = [
   '工作台',
@@ -72,6 +72,39 @@ export async function expectMainContent(page: Page) {
     .map(item => item.trim())
     .filter(Boolean);
   expect(text.length, 'Page should render visible content').toBeGreaterThan(2);
+}
+
+export async function clickTab(tab: Locator) {
+  const header = tab.locator('xpath=ancestor::div[contains(@class,"el-tabs__header")][1]');
+  await header.scrollIntoViewIfNeeded({ timeout: 10_000 });
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await header.locator('.el-tabs__nav').evaluate(async element => {
+      await Promise.all(element.getAnimations().map(animation => animation.finished));
+    }, undefined, { timeout: 10_000 });
+    const target = await tab.boundingBox();
+    const viewport = await header.locator('.el-tabs__nav-scroll').boundingBox();
+    if (!target || !viewport || viewport.width <= 0) {
+      throw new Error('Tab navigation has no usable visible viewport');
+    }
+    const center = target.x + target.width / 2;
+    if (center >= viewport.x && center <= viewport.x + viewport.width) {
+      // A visible tab can still be clipped by a pane or covered by an arrow.
+      await expect.poll(() => tab.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return hit !== null && (hit === element || element.contains(hit));
+      }), { timeout: 10_000, message: 'tab center must receive native pointer events' }).toBe(true);
+      await tab.click({ timeout: 10_000 });
+      return;
+    }
+    const direction = center < viewport.x ? 'prev' : 'next';
+    const previousX = target.x;
+    const arrow = header.locator(`.el-tabs__nav-${direction}`);
+    await expect(arrow, 'native tab navigation arrow must be usable').toBeVisible({ timeout: 10_000 });
+    await arrow.click({ timeout: 10_000 });
+    await expect.poll(async () => (await tab.boundingBox())?.x).not.toBe(previousX);
+  }
+  throw new Error('Tab navigation arrows did not reveal the requested tab');
 }
 
 export async function expectNoHorizontalOverflow(page: Page) {

@@ -10,7 +10,10 @@ test('core model APIs are routed correctly', async ({ page }) => {
   );
   expect(jsonSchema.status()).toBe(200);
   const contentType = (await jsonSchema.headers())['content-type'] || '';
-  expect(contentType).toContain('application/json');
+  expect(contentType).toMatch(
+    /^application\/(?:[\w.-]+\+)?json(?:;|$)/i,
+  );
+  await expect(jsonSchema.json()).resolves.toBeDefined();
 
   const operators = await request.get(
     '/api/ibizplm__plmweb/dictionaries/codelist/SysOperator?size=10000',
