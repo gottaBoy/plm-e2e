@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clickTab, gotoApp, menus, openMenu } from './helpers';
+import {
+  isExpectedExtensionManifestConsole,
+  isExpectedExtensionManifestMiss,
+} from './modeling-ide-contract';
 
 // Clicks every tree node and every tab each first-level menu exposes, so a
 // broken secondary feature cannot hide behind the twelve top-level checks in
@@ -23,8 +27,14 @@ function watch(page: Page) {
   page.on('pageerror', error =>
     failures.push({ item: '', kind: 'pageerror', detail: String(error).slice(0, 200) }));
   page.on('response', response => {
-    if (response.status() >= 400)
-      failures.push({ item: '', kind: `http ${response.status()}`, detail: response.url().slice(0, 160) });
+    const status = response.status();
+    if (status < 400) return;
+    const finding = { item: '', kind: `http ${status}`, detail: response.url().slice(0, 160) };
+    if (isExpectedExtensionManifestMiss({ status, url: response.url() })) {
+      notes.push({ ...finding, kind: 'expected-http-404', detail: finding.detail });
+      return;
+    }
+    failures.push(finding);
   });
   page.on('requestfailed', request =>
     failures.push({ item: '', kind: 'requestfailed', detail: `${request.url()} ${request.failure()?.errorText}` }));
@@ -34,7 +44,12 @@ function watch(page: Page) {
   page.on('console', message => {
     if (message.type() !== 'error') return;
     const text = message.text();
-    failures.push({ item: '', kind: 'console', detail: text.slice(0, 200) });
+    const finding = { item: '', kind: 'console', detail: text.slice(0, 200) };
+    if (isExpectedExtensionManifestConsole({ message: text, source: message.location().url || '' })) {
+      notes.push({ ...finding, kind: 'expected-console-404', detail: message.location().url || '' });
+      return;
+    }
+    failures.push(finding);
   });
   return { failures, notes };
 }

@@ -3,6 +3,8 @@ import { writeFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { appPath, authHeaders, gotoApp, openMenu } from './helpers';
 
+const currentUserId = process.env.PLM_E2E_USERNAME || 'demo_admin';
+
 function collect(page: Page) {
   const evidence = {
     baseUrl: test.info().project.use.baseURL,
@@ -256,14 +258,19 @@ test('organization product wizard adds a real member, creates, edits, deletes an
       'product picker must load its actual plugin').toBe(true);
     }
     await picker.locator('button[title="确定"]').click();
-    await expect(wizard.locator('.el-table__row')).toHaveCount(users.length);
-    await assertNativeMemberGridUsable(wizard, users.length);
+    // The picker excludes the current user; the wizard pre-adds that user as
+    // the default product administrator.
+    const expectedMemberCount = users.some(user => user.id === currentUserId)
+      ? users.length
+      : users.length + 1;
+    await expect(wizard.locator('.el-table__row')).toHaveCount(expectedMemberCount);
+    await assertNativeMemberGridUsable(wizard, expectedMemberCount);
     await checkpoint(page, evidence, 'member-added');
     await footerButton(wizard, /后退|Retreat/).click();
     await expect(wizard.getByPlaceholder('输入产品名称')).toHaveValue(originalName);
     await footerButton(wizard, /下一步|Next/).click();
-    await expect(wizard.locator('.el-table__row')).toHaveCount(users.length);
-    await assertNativeMemberGridUsable(wizard, users.length);
+    await expect(wizard.locator('.el-table__row')).toHaveCount(expectedMemberCount);
+    await assertNativeMemberGridUsable(wizard, expectedMemberCount);
     const creation = page.waitForResponse(response => /\/products\/?$/.test(response.url()) && response.request().method() === 'POST');
     await footerButton(wizard, /完成|Complete/).click();
     const createdResponse = await creation;
@@ -278,8 +285,11 @@ test('organization product wizard adds a real member, creates, edits, deletes an
     const members = await membersResponse.json();
     evidence.business.persistedMembers = members;
     expect(members.some((item: { user_id: string }) => item.user_id === member.id), 'selected member ID must actually persist').toBe(true);
-    expect(members).toHaveLength(users.length);
-    for (const user of users) {
+    expect(members).toHaveLength(expectedMemberCount);
+    const expectedMembers = users.some(user => user.id === currentUserId)
+      ? users
+      : [...users, { id: currentUserId }];
+    for (const user of expectedMembers) {
       expect(members.filter((item: { user_id: string }) => item.user_id === user.id),
         'each selected native user must persist exactly once').toHaveLength(1);
     }
@@ -310,7 +320,11 @@ test('organization product wizard adds a real member, creates, edits, deletes an
     const updated = await api.get(`/api/ibizplm__plmweb/products/${productId}`, { headers });
     expect(updated.status()).toBe(200);
     expect((await updated.json()).name).toBe(editedName);
+    const reloadedProduct = page.waitForResponse(response =>
+      new URL(response.url()).pathname.endsWith(`/products/${productId}`) &&
+      response.request().method() === 'GET', { timeout: 30_000 });
     await page.reload({ waitUntil: 'domcontentloaded' });
+    expect((await reloadedProduct).status()).toBe(200);
     await expect(nameInput).toHaveValue(editedName);
     await checkpoint(page, evidence, 'product-edited-and-reloaded');
 

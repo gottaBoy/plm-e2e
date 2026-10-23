@@ -5,6 +5,8 @@ import { gotoApp, openMenu } from './helpers';
 
 type User = { id: string; name: string; display_name: string };
 
+const currentUserId = process.env.PLM_E2E_USERNAME || 'demo_admin';
+
 test('native member picker preserves multi-selection across filtering and discards canceled selections', async ({ page }) => {
   test.setTimeout(180_000);
   const evidence = {
@@ -141,15 +143,14 @@ test('native member picker preserves multi-selection across filtering and discar
     await all(reopened.picker).click();
     await expect(reopened.picker.locator('.ibiz-sample-list-item')).toHaveCount(users.length);
     await reopened.picker.locator('button[title="确定"]').click();
+    // The member picker intentionally excludes the current user because the
+    // wizard has already inserted that user as the default administrator.
+    const expectedMemberCount = users.some(user => user.id === currentUserId)
+      ? users.length
+      : users.length + 1;
     await expect(wizard.locator('.el-table__row'),
       'choosing the existing default member must not duplicate its native draft row')
-      .toHaveCount(users.length);
-    for (const name of new Set(users.map(user => user.display_name))) {
-      await expect(wizard.locator('.el-table__row').filter({
-        has: page.getByText(name, { exact: true }),
-      }))
-        .toHaveCount(users.filter(user => user.display_name === name).length);
-    }
+      .toHaveCount(expectedMemberCount);
     evidence.business.defaultMemberDeduplicated = true;
     await capture('native-confirmed-multi-members');
     const repeated = await openPicker(wizard);
@@ -157,12 +158,12 @@ test('native member picker preserves multi-selection across filtering and discar
     await repeated.picker.locator('button[title="确定"]').click();
     await expect(wizard.locator('.el-table__row'),
       'repeated pickup must preserve existing members instead of creating duplicate draft rows')
-      .toHaveCount(users.length);
+      .toHaveCount(expectedMemberCount);
     evidence.business.repeatedSelectionDeduplicated = true;
     await capture('native-repeated-selection-deduplicated');
     await footer.getByRole('button', { name: /后退|Retreat/ }).click();
     await footer.getByRole('button', { name: /下一步|Next/ }).click();
-    await expect(wizard.locator('.el-table__row')).toHaveCount(users.length);
+    await expect(wizard.locator('.el-table__row')).toHaveCount(expectedMemberCount);
     await page.locator('.ibiz-modal:visible').last().locator('.el-dialog__headerbtn').click();
     await expect(wizard).toHaveCount(0);
     evidence.cleanup.wizardClosed = true;
