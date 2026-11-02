@@ -66,3 +66,34 @@ test('late product tree responses cannot replace the active settings route', asy
     await test.info().attach('stale-tree-navigation', { path: file, contentType: 'application/json' });
   }
 });
+
+test('product settings preserve the active form across repeated real page reloads', async ({ page }) => {
+  const response = await page.request.post('/api/ibizplm__plmweb/products/fetch_main', {
+    headers: await authHeaders(page), data: { page: 0, size: 100 },
+  });
+  expect(response.status()).toBe(200);
+  const products = await response.json();
+  expect(products.length, 'a real product is required').toBeGreaterThan(0);
+  const product = products[0];
+  const url = appPath(`/#/-/index/product=${encodeURIComponent(product.id)}/product_index_view/srfnav=usrdrgroup1228809432/product_setting_view/srfnav=base/product_base_information_edit_view/-`);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(String(error)));
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  const expectedUrl = page.url();
+  const name = page.locator('.ibiz-view--product_base_information_edit_view .ibiz-form-item')
+    .filter({ hasText: '产品名称' }).locator('input').first();
+  const reloads: string[] = [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await expect(name).toHaveValue(product.name);
+    await expect(page.locator('#app-loading-x')).toBeHidden();
+    await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0);
+    await expect(page).toHaveURL(expectedUrl);
+    reloads.push(page.url());
+    if (attempt < 4) await page.reload({ waitUntil: 'domcontentloaded' });
+  }
+  expect(errors).toEqual([]);
+  await test.info().attach('settings-repeated-reload', {
+    body: Buffer.from(JSON.stringify({ productId: product.id, reloads, errors }, null, 2)),
+    contentType: 'application/json',
+  });
+});
