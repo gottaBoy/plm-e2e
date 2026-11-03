@@ -68,6 +68,25 @@ for (const [index, menu] of menus.entries()) {
     for (const label of await page.locator('.ibiz-no-data:visible .el-empty__description').all()) {
       await expect(label).toHaveText(/^(?:No Data|No data available)$/);
     }
+    const untranslated = await page.evaluate(() => {
+      const labels: string[] = [];
+      const elements = document.querySelectorAll<HTMLElement>(
+        'button, input[placeholder], .ibiz-form-item-container__label, .el-table__header th',
+      );
+      for (const element of elements) {
+        if (!element.getBoundingClientRect().width || !element.getBoundingClientRect().height) continue;
+        if (element.getAttribute('aria-label') === 'Language / 语言') continue;
+        const value = (element.getAttribute('placeholder') ||
+          element.getAttribute('title') || element.innerText || '').trim();
+        if (/[\u3400-\u9fff]/u.test(value)) labels.push(value);
+      }
+      return [...new Set(labels)];
+    });
+    await test.info().attach('untranslated-fixed-controls', {
+      body: Buffer.from(JSON.stringify({ menu, language: 'en', untranslated }, null, 2)),
+      contentType: 'application/json',
+    });
+    expect(untranslated, 'fixed commands, field labels and placeholders must follow English').toEqual([]);
     await expectNoHorizontalOverflow(page);
     expect(errors).toEqual([]);
     await page.screenshot({ path: test.info().outputPath('english-module.png'), fullPage: true });
