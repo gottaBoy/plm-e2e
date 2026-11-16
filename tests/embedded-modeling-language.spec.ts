@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { gotoApp } from './helpers';
 
 for (const language of ['en', 'zh-CN']) {
-  test(`embedded Modeling IDE follows ${language} and explains disabled MQTT without a false connection error`,
+  test(`embedded Modeling IDE stays visible on entry and its manual console follows ${language}`,
     async ({ page }) => {
       const mqttSockets: string[] = [];
       page.on('websocket', socket => {
@@ -18,7 +18,22 @@ for (const language of ['en', 'zh-CN']) {
       const frame = iframe.contentFrame();
       await expect(frame.locator('html')).toHaveAttribute('lang', language);
       await expect(frame.locator('#app-loading-x')).toBeHidden();
+      await expect(frame.locator('.aibiz-design-index')).toBeVisible();
+      await expect(frame.locator('.ibiz-drawer.open'),
+        'The embedded IDE must not automatically open a console over the workspace').toHaveCount(0);
+      const consoleMenu = frame.locator('.ibiz-bottom-side-menu').getByText(
+        language === 'en' ? 'Console' : '控制台', { exact: true },
+      );
+      await expect.poll(() => consoleMenu.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.top >= 0 && bounds.bottom <= innerHeight;
+      }), { message: 'A long entity tree must not push the console menu below the iframe' }).toBe(true);
+      await consoleMenu.scrollIntoViewIfNeeded();
+      await consoleMenu.click();
       const console = frame.locator('.aibiz-console');
+      await expect(console).toBeVisible();
+      const close = frame.locator('.aibiz-console-drawer .el-drawer__close-btn');
+      await expect(close, 'The manually opened console must have a usable close control').toBeVisible();
       await expect(console).toHaveAttribute('data-console-status', 'disabled');
       await expect(console.getByRole('alert')).toHaveCount(0);
       await expect(console).not.toContainText('Authenticated host MQTT service is unavailable.');
@@ -36,5 +51,8 @@ for (const language of ['en', 'zh-CN']) {
         await expect(console).toContainText('当前部署未启用 MQTT，实时日志不可用。');
       }
       await page.screenshot({ path: test.info().outputPath(`modeling-${language}.png`), fullPage: true });
+      await close.click();
+      await expect(frame.locator('.ibiz-drawer.open')).toHaveCount(0);
+      await expect(frame.locator('.aibiz-design-index')).toBeVisible();
     });
 }
