@@ -34,3 +34,28 @@ for (const menu of menus) {
     await expectNoHorizontalOverflow(page);
   });
 }
+
+test('secondary development API reference keeps the local document theme', async ({ page }) => {
+  await gotoApp(page);
+  await openMenu(page, '二次开发');
+  const apiLink = page.getByText('接口说明', { exact: true }).first();
+  await expect(apiLink).toBeVisible();
+  await apiLink.click();
+
+  const frame = page.frames().find(item => item.url().includes('/doc/'));
+  expect(frame, 'API reference iframe must load the local Docsify document').toBeTruthy();
+  await expect(frame!.locator('.markdown-section').first()).toBeVisible();
+  const style = await frame!.locator('h1').first().evaluate(element => {
+    const computed = getComputedStyle(element);
+    return {
+      fontSize: computed.fontSize,
+      color: computed.color,
+      textDecoration: computed.textDecorationLine,
+    };
+  });
+  expect(Number.parseFloat(style.fontSize)).toBeGreaterThanOrEqual(24);
+  expect(style.color).not.toBe('rgb(0, 0, 238)');
+  expect(style.textDecoration).not.toContain('underline');
+  expect(await frame!.locator('.sidebar').evaluate(element => getComputedStyle(element).width))
+    .toBe('250px');
+});
