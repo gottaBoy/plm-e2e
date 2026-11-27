@@ -69,6 +69,7 @@ test('normal Development API Reference embeds the published host and documented 
       'ibiz-app-hub/packages/runtime/src/controller/common/control/control.controller.ts',
       'ibiz-app-hub/packages/runtime/src/service/service/auth/v7-auth.service.ts',
       'ibiz-app-hub/packages/runtime/src/controller/control/app-menu/app-menu.controller.ts',
+      'scripts/tests/app-menu-navigation-lifecycle.test.mjs',
       'plm/model/PSSYSTEM.json',
     ];
     evidence.executedProbeSources = sourcePaths.map(relative => {

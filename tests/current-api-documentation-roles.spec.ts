@@ -100,10 +100,11 @@ async function notificationRows(session: ProductSession, role: Role) {
   return rows;
 }
 
-function notificationScope(rows: any[], marker: string, identity: any, startedAt: number) {
+function notificationScope(rows: any[], marker: string, identity: any, startedAt: number,
+  ownerIds = new Set([identity.srfuserid, identity.srfpersonid])) {
   return rows.filter(row => typeof row.content === 'string' && row.content.includes(marker)
     && row.receiver === identity.srfuserid && row.system_tag === identity.srfdcsystemid
-    && [identity.srfuserid, identity.srfpersonid].filter(Boolean).includes(row.owner_id)
+    && ownerIds.has(row.owner_id)
     && Date.parse(String(row.create_time).replace(' ', 'T') + '+08:00') >= startedAt - 120_000);
 }
 
@@ -145,20 +146,20 @@ function nativeIdeaEffectSnapshotSQL(productId: string, actorId: string, provide
 }
 
 async function deleteOwnedNotifications(session: ProductSession, evidence: any, marker: string,
-  baseline: any[], role: Role, startedAt: number) {
+  baseline: any[], role: Role, startedAt: number, ownerIds: Set<string>) {
   const identity = await session.identity();
   const request = requestFor(session, evidence, role);
   const rows = await pageDocumentationNotifications(async (method, suffix, data) => {
     const result = await request(method, suffix, data);
     return { status: result.status, value: result.value, headers: result.headers };
   }, identity);
-  const owned = notificationScope(rows, marker, identity, startedAt);
+  const owned = notificationScope(rows, marker, identity, startedAt, ownerIds);
   const baselineIds = new Set(baseline.map(row => row.id));
   assert.ok(owned.every(row => !baselineIds.has(row.id)));
   for (const row of owned) {
     const read = await request('GET', `/extension/internal_messages/${row.id}`);
     assert.equal(read.status, 200);
-    assert.ok(notificationScope([read.value], marker, identity, startedAt).length === 1);
+    assert.ok(notificationScope([read.value], marker, identity, startedAt, ownerIds).length === 1);
   }
   for (const row of owned) {
     const removed = await request('DELETE', `/extension/internal_messages/${row.id}`);
@@ -170,7 +171,7 @@ async function deleteOwnedNotifications(session: ProductSession, evidence: any, 
     const result = await request(method, suffix, data);
     return { status: result.status, value: result.value, headers: result.headers };
   }, identity);
-  assert.equal(notificationScope(after, marker, identity, startedAt).length, 0);
+  assert.equal(notificationScope(after, marker, identity, startedAt, ownerIds).length, 0);
   const originalIds = new Set(baseline.map(row => row.id));
   assert.deepEqual(documentationNotificationSnapshot(after.filter(row => originalIds.has(row.id))),
     documentationNotificationSnapshot(baseline));
@@ -248,6 +249,8 @@ test('normal-UI authenticated B03 role gate uses the retained shared product fix
         productRole: credentials[role].productRole ?? null, organizationId: credentials[role].organizationId ?? null,
         normalUiLogin: true, tokenInjected: false, identity: identities.get(role) };
     }
+    const ownerIds = new Set([...identities.values()].flatMap(identity =>
+      [identity.srfuserid, identity.srfpersonid].filter(Boolean)));
     const adminRequest = requests.get('admin')!;
     const members = await sessions.get('admin')!.request('POST', `/products/${productId}/product_members/fetch_default`,
       { page: 0, size: 1000 });
@@ -356,7 +359,7 @@ test('normal-UI authenticated B03 role gate uses the retained shared product fix
     } finally { await freshOrdinary.close(); }
     for (const role of roles) {
       await deleteOwnedNotifications(sessions.get(role)!, evidence, marker,
-        notificationBaselines.get(role) ?? [], role, startedAt);
+        notificationBaselines.get(role) ?? [], role, startedAt, ownerIds);
     }
     const remove = await adminRequest('DELETE', `/products/${productId}/ideas/${productIdeaId}`);
     assert.equal(remove.status, 200);
