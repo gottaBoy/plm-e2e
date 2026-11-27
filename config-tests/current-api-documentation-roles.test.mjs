@@ -57,6 +57,7 @@ test('read-only effect snapshot helper is explicit and rejects Docker by default
   assert.ok(spec.includes('PLM_CURRENT_API_DOCUMENTATION_ROLES_READONLY_SQL'));
   assert.ok(spec.includes('nativeIdeaEffectSnapshotSQL'));
   assert.ok(spec.includes('physicalDatabaseRead: false'));
+  assert.ok(spec.includes('physicalEffectGate'));
   assert.ok(spec.includes('MYSQL_PWD="$MYSQL_ROOT_PASSWORD"'));
 });
 
