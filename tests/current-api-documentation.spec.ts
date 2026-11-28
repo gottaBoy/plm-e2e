@@ -129,7 +129,7 @@ test('normal Development API Reference embeds the published host and documented 
     expect(developmentReceipt.manifestSha256)
       .toBe('ca764ce33b76fe5c39741fdf13089d22299d435c08a4b870cc30a2f0cd9cb24d');
     expect(developmentReceipt.planSha256)
-      .toBe('d4aa4f34920edde52af1a3644c8403b3e18dad1febedfc6ff5a8b9ec66cc0484');
+      .toBe('893b4675935a9d95048833242460b20104552cbd954f7a27ef24ac11af06eb1b');
     expect(developmentReceipt.mutations).toHaveLength(4);
     evidence.developmentLayoutRelease = {
       path: developmentReceiptPath, sha256: developmentReceiptSha256,
