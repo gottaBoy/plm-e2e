@@ -387,6 +387,24 @@ export type ProductSession = {
   close(): Promise<void>;
 };
 
+export type ProductSessionOptions = {
+  businessEventMode?: 'product' | 'observe';
+};
+
+export function classifyOwnedMqttBusinessEvent(message: any, body: Buffer | undefined,
+  marker: string, businessEventMode: 'product' | 'observe' = 'product') {
+  assert.ok(['product', 'observe'].includes(businessEventMode));
+  if (message?.subtype !== 'INTERNALMESSAGE' || !body?.includes(Buffer.from(marker))) return {};
+  assert.equal(typeof message.content, 'string', 'Owned MQTT notification content is not HTML text');
+  const event = productNotificationText(message.content).event;
+  if (businessEventMode === 'product') {
+    assert.ok(productNotificationEvents.some(item => item.text === event),
+      'Owned MQTT notification has an unknown product event');
+  }
+  return { businessEvent: event, businessEventMode,
+    businessEventSemanticsValidated: businessEventMode === 'product' };
+}
+
 export async function ensureProductMenu(page: Page, language: 'zh-CN' | 'en') {
   const navigation = page.locator('.ibiz-control-appmenu-plm_menu');
   await expect(navigation).toBeVisible();
@@ -409,7 +427,10 @@ export async function openProductManagement(page: Page, language: 'zh-CN' | 'en'
 }
 
 export async function loginProductSession(browser: Browser, credentials: ProductCredentials,
-  evidence: Evidence, language: 'zh-CN' | 'en', testInfo: TestInfo): Promise<ProductSession> {
+  evidence: Evidence, language: 'zh-CN' | 'en', testInfo: TestInfo,
+  options: ProductSessionOptions = {}): Promise<ProductSession> {
+  const businessEventMode = options.businessEventMode ?? 'product';
+  assert.ok(['product', 'observe'].includes(businessEventMode));
   const context = await browser.newContext({
     locale: language === 'en' ? 'en-US' : 'zh-CN',
     viewport: testInfo.project.use.viewport as { width: number; height: number },
@@ -417,7 +438,8 @@ export async function loginProductSession(browser: Browser, credentials: Product
     serviceWorkers: 'block', timezoneId: 'Asia/Shanghai',
   });
   await context.addInitScript(selected => {
-    if (location.protocol === 'http:' || location.protocol === 'https:') {
+    if ((location.protocol === 'http:' || location.protocol === 'https:')
+        && localStorage.getItem('language') === null) {
       localStorage.setItem('language', selected);
     }
   }, language);
@@ -454,16 +476,10 @@ export async function loginProductSession(browser: Browser, credentials: Product
       if (packet.cmd === 'publish' && body) {
         try { message = JSON.parse(body.toString('utf8')); } catch {}
       }
-      let businessEvent: string | undefined;
-      if (message?.subtype === 'INTERNALMESSAGE' && body?.includes(Buffer.from(evidence.marker))
-          && typeof message.content === 'string') {
-        try {
-          const event = productNotificationText(message.content).event;
-          if (productNotificationEvents.some(item => item.text === event)) businessEvent = event;
-          else evidence.captureErrors.push('Owned MQTT notification has an unknown product event');
-        } catch (error) {
-          evidence.captureErrors.push(`Owned MQTT notification content: ${redact((error as Error).message)}`);
-        }
+      let business: ReturnType<typeof classifyOwnedMqttBusinessEvent> = {};
+      try { business = classifyOwnedMqttBusinessEvent(message, body, evidence.marker, businessEventMode); }
+      catch (error) {
+        evidence.captureErrors.push(`Owned MQTT notification content: ${redact((error as Error).message)}`);
       }
       evidence.mqttPackets.push({ socketPath, direction: 'received', command: packet.cmd,
         ...(packet.cmd === 'connack' ? { returnCode: packet.returnCode } : {}),
@@ -472,7 +488,7 @@ export async function loginProductSession(browser: Browser, credentials: Product
         ...(body ? { payloadBytes: body.length, payloadSha256: digest(body),
           matchesOwnedMarker: body.includes(Buffer.from(evidence.marker)) } : {}),
         ...(message ? { portalType: message.type, portalSubtype: message.subtype } : {}),
-        ...(businessEvent ? { businessEvent } : {}) });
+        ...business });
     });
     evidence.mqttConnections.push({ path: socketPath, rawUrlOrTokenRetained: false });
     socket.on('framereceived', frame => {
@@ -593,6 +609,7 @@ export async function loginProductSession(browser: Browser, credentials: Product
     const nativeHeaders = await headers();
     validateProductIdentity(serverContext, nativeHeaders, credentials);
     evidence.sessions.push({ login: 'normal-ui', tokenInjected: false,
+      mqttBusinessEventMode: businessEventMode,
       applicationHeaderSource: 'observed-normal-browser-request',
       system: nativeHeaders.srfsystemid, organizationSha256: digest(nativeHeaders.srforgid),
       serverIdentitySha256: digest(JSON.stringify(Object.fromEntries(
