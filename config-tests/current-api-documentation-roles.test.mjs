@@ -6,6 +6,7 @@ import test from 'node:test';
 const root = path.resolve(new URL('../..', import.meta.url).pathname);
 const config = fs.readFileSync(path.join(root, 'plm-e2e/playwright.current-api-documentation-roles.config.ts'), 'utf8');
 const spec = fs.readFileSync(path.join(root, 'plm-e2e/tests/current-api-documentation-roles.spec.ts'), 'utf8');
+const contract = fs.readFileSync(path.join(root, 'plm-e2e/tests/current-api-documentation-role-contract.mjs'), 'utf8');
 
 test('B03 authenticated role config is serial, bounded and private', () => {
   for (const text of [
@@ -31,14 +32,14 @@ test('spec covers bounded positive and negative idea API operations with readbac
   for (const text of [
     'POST', '/ideas', 'PUT', '/ideas/save', 'DELETE',
     'readonly', 'nonmember', 'crossorg', 'businessProjectionUnchanged',
-    'freshSessionReadback', 'normalArchivedDeletedMarkerRows',
+    'freshSessionReadback', 'cleanupRoleIdea', 'assertRoleIdea',
   ]) assert.ok(spec.includes(text), `Missing B03 operation gate: ${text}`);
 });
 
-test('spec snapshots paginated notifications and exact keyed cleanup without product MQTT assertions', () => {
+test('spec records real paginated notification sets and retains unexpected messages without guessing deletion ownership', () => {
   for (const text of [
     'pageDocumentationNotifications', 'documentationNotificationSnapshot',
-    'zeroOwnedAfter', 'actualKeyed404', 'realtimeAcceptance = false',
+    'assertRoleMessagesUnchanged', "businessEventMode: 'observe'", 'realtimeAcceptance = false',
     'mqttPackets', 'NOT_RUN_NO_DOCKER',
   ]) assert.ok(spec.includes(text), `Missing notification boundary: ${text}`);
   assert.ok(!spec.includes('productNotificationEvents'), 'The role spec must not reuse six product event assertions');
@@ -47,7 +48,7 @@ test('spec snapshots paginated notifications and exact keyed cleanup without pro
 test('spec keeps deletion bounded to the retained product fixture and exact marker', () => {
   for (const text of [
     'retainedForMatrix', 'native-actors-run-20261124-r7',
-    'normalArchivedDeletedMarkerRows', 'physicalMarkerRows',
+    'cleanupRoleIdea', 'creationAttempted', 'FAILED-RETAINED',
     'productId', 'marker',
   ]) assert.ok(spec.includes(text), `Missing owned cleanup binding: ${text}`);
   assert.ok(!spec.includes('DELETE FROM') && !spec.includes('INSERT INTO') && !spec.includes('UPDATE '));
@@ -111,9 +112,10 @@ test('role matrix does not claim restricted organization administrator', () => {
 });
 
 test('notification cleanup keeps send audit and recent deletion explicitly open', () => {
-  assert.ok(spec.includes('sendAuditDeleted: false'));
-  assert.ok(spec.includes('recentRecordsDeleted: false'));
-  assert.ok(spec.includes('physicalDatabaseTotalInvarianceClaimed: false'));
+  assert.ok(contract.includes('sendAuditDeleted: false'));
+  assert.ok(contract.includes('recentRecordsDeleted: false'));
+  assert.ok(contract.includes('actualDeletes: 0'));
+  assert.ok(contract.includes('Unexpected messages must be retained'));
 });
 
 test('normal UI session is used for the fresh readback', () => {

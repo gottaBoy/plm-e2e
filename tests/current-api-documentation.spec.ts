@@ -25,6 +25,8 @@ const appliedRuntimeFiles = new Map([
     '8bf8a86e1adf6c1292328c767f6224e2706542487eb350c79819e1452cfa4a33'],
   ['index.html', 'abe4897ef1e4082b6b118c330492823f1bad4efc71982562431b12ce84cb6f04'],
 ]);
+const developmentLayoutRelative = 'static/css/plm-development-layout-a7960806acae7bae.css';
+const developmentLayoutSha256 = 'a7960806acae7bae3355fdbe105210e9a742156370482d44daab9c395f5bc402';
 
 async function nativeApiFrame(page: Page): Promise<Frame> {
   const iframe = page.locator('.ibiz-view--ps_core_prd_func_api_show_html_view iframe');
@@ -70,6 +72,7 @@ test('normal Development API Reference embeds the published host and documented 
       'ibiz-app-hub/packages/runtime/src/service/service/auth/v7-auth.service.ts',
       'ibiz-app-hub/packages/runtime/src/controller/control/app-menu/app-menu.controller.ts',
       'scripts/tests/app-menu-navigation-lifecycle.test.mjs',
+      'plm-web/src/runtime/development-layout.css',
       'plm/model/PSSYSTEM.json',
     ];
     evidence.executedProbeSources = sourcePaths.map(relative => {
@@ -113,6 +116,27 @@ test('normal Development API Reference embeds the published host and documented 
     evidence.runtimeRelease = { path: runtimeReceiptPath, sha256: runtimeReceiptSha256,
       manifestSha256: runtimeReceipt.manifestSha256, epoch: runtimeReceipt.epoch,
       status: runtimeReceipt.status, sourcesChangedFromServingPredecessor: 3 };
+    const developmentReceiptPath = process.env.PLM_CURRENT_API_DOCUMENTATION_DEVELOPMENT_LAYOUT_APPLY;
+    const developmentReceiptSha256 =
+      process.env.PLM_CURRENT_API_DOCUMENTATION_DEVELOPMENT_LAYOUT_APPLY_SHA256;
+    assert.ok(developmentReceiptPath && path.isAbsolute(developmentReceiptPath));
+    assert.match(developmentReceiptSha256 ?? '', /^[a-f0-9]{64}$/);
+    const developmentReceiptBytes = fs.readFileSync(developmentReceiptPath);
+    expect(digest(developmentReceiptBytes)).toBe(developmentReceiptSha256);
+    const developmentReceipt = JSON.parse(developmentReceiptBytes.toString('utf8'));
+    expect(developmentReceipt.contract).toBe('plm-language-runtime-apply-v1');
+    expect(developmentReceipt.status).toBe('APPLIED-STATIC-BUSINESS-ACCEPTANCE-PENDING');
+    expect(developmentReceipt.manifestSha256)
+      .toBe('ca764ce33b76fe5c39741fdf13089d22299d435c08a4b870cc30a2f0cd9cb24d');
+    expect(developmentReceipt.planSha256)
+      .toBe('d4aa4f34920edde52af1a3644c8403b3e18dad1febedfc6ff5a8b9ec66cc0484');
+    expect(developmentReceipt.mutations).toHaveLength(4);
+    evidence.developmentLayoutRelease = {
+      path: developmentReceiptPath, sha256: developmentReceiptSha256,
+      manifestSha256: developmentReceipt.manifestSha256,
+      cssPath: developmentLayoutRelative, cssSha256: developmentLayoutSha256,
+      status: developmentReceipt.status,
+    };
     journal('prepared-native-documentation-run');
     let session: ProductSession | undefined;
     let productId: string | undefined;
@@ -199,6 +223,16 @@ test('normal Development API Reference embeds the published host and documented 
       expect(loaded.every((resource: any) => resource.sha256 === appliedRuntimeFiles.get(runtimeRelative))).toBe(true);
       evidence.stages.loadedRuntimeBinding = { status: 'PASS', path: runtimeRelative,
         sha256: appliedRuntimeFiles.get(runtimeRelative), observedBrowserResponses: loaded.length };
+      const developmentCssLoaded = evidence.resourceBindings.filter((resource: any) =>
+        resource.path === `/ibizplm-plmweb/${developmentLayoutRelative}`);
+      expect(developmentCssLoaded.length,
+        'Normal login must load the exact applied mobile Development layout CSS').toBeGreaterThan(0);
+      expect(developmentCssLoaded.every((resource: any) =>
+        resource.sha256 === developmentLayoutSha256)).toBe(true);
+      evidence.stages.loadedDevelopmentLayoutBinding = {
+        status: 'PASS', path: developmentLayoutRelative,
+        sha256: developmentLayoutSha256, observedBrowserResponses: developmentCssLoaded.length,
+      };
       const { page } = session;
       const navigation = page.locator('.ibiz-control-appmenu-plm_menu');
       if (await navigation.evaluate(element => element.classList.contains('is-collapse'))) {
@@ -218,29 +252,91 @@ test('normal Development API Reference embeds the published host and documented 
       await clickTab(apiTab);
       const frame = await nativeApiFrame(page);
       if ((page.viewportSize()?.width ?? 1440) < 768) {
+        evidence.stages.mobileGeometryBeforeSearch = {
+          iframe: await page.locator('.ibiz-view--ps_core_prd_func_api_show_html_view iframe').boundingBox(),
+          hostViewport: page.viewportSize(),
+          layout: await page.locator('.second_dev_tab_style').evaluate(element =>
+            [...element.querySelectorAll('.ibiz-control-viewlayoutpanel-content, .ibiz-panel-view-header, .ibiz-panel-view-header *, .el-tabs')].map(item => {
+              const style = getComputedStyle(item);
+              return { classes: item.className, rect: item.getBoundingClientRect().toJSON(),
+                scrollWidth: item.scrollWidth, minWidth: style.minWidth, display: style.display,
+                flexDirection: style.flexDirection, overflow: style.overflow, width: style.width };
+            })),
+          matched: await page.locator('.second_dev_tab_style .ibiz-panel-view-header > .ibiz-row')
+            .evaluate(element => {
+              const style = getComputedStyle(element);
+              return { matched: true, flexDirection: style.flexDirection, height: style.height,
+                parentHeight: getComputedStyle(element.parentElement!).height,
+                selectorParent: element.parentElement?.className,
+                inlineStyle: element.getAttribute('style'),
+                parentInlineStyle: element.parentElement?.getAttribute('style'),
+                scopedMatch: element.matches('.ibiz-view--ps_core_prd_func_second_dev_tav_exp_view .ibiz-panel-view-header > .ibiz-row'),
+                themeMatch: element.matches('.second_dev_tab_style .ibiz-panel-view-header > .ibiz-row'),
+                nearestView: element.closest('[class*="second_dev"]')?.className ?? null,
+              };
+            }).catch(() => ({ matched: false })),
+          matchingRules: await page.evaluate(() => {
+            const found: any[] = [];
+            const visit = (rules: CSSRuleList) => {
+              for (const rule of Array.from(rules)) {
+                if (rule instanceof CSSMediaRule) visit(rule.cssRules);
+                else if (rule instanceof CSSStyleRule &&
+                  /second_dev_tab_style|ibiz-panel-view-header/.test(rule.selectorText)) {
+                  found.push({ selector: rule.selectorText, css: rule.cssText });
+                }
+              }
+            };
+            for (const sheet of Array.from(document.styleSheets)) {
+              try { if (sheet.cssRules) visit(sheet.cssRules); } catch {}
+            }
+            return found.slice(-30);
+          }),
+          ancestors: await page.locator('.ibiz-view--ps_core_prd_func_api_show_html_view iframe').evaluate(element => {
+            const result = [];
+            for (let item: Element | null = element; item; item = item.parentElement) {
+              const style = getComputedStyle(item);
+              result.push({ tag: item.tagName, classes: item.className,
+                rect: item.getBoundingClientRect().toJSON(), scrollLeft: item.scrollLeft,
+                scrollWidth: item.scrollWidth, clientWidth: item.clientWidth, overflow: style.overflow,
+                position: style.position, width: style.width, transform: style.transform,
+                minWidth: style.minWidth, flex: style.flex });
+            }
+            return result;
+          }),
+          document: await frame.evaluate(() => {
+            const rect = (element: Element | null) => element?.getBoundingClientRect().toJSON();
+            return { width: innerWidth, height: innerHeight, bodyClass: document.body.className,
+              toggle: rect(document.querySelector('.sidebar-toggle')),
+              sidebar: rect(document.querySelector('.sidebar')),
+              search: rect(document.querySelector('[data-aibiz-api-search]')),
+              scrollWidth: document.documentElement.scrollWidth };
+          }),
+        };
+        journal('mobile-geometry-before-search');
         const body = frame.locator('body');
         if (!await body.evaluate(element => element.classList.contains('close'))) {
           const toggle = frame.locator('.sidebar-toggle');
           const box = await toggle.boundingBox();
-          const viewport = await frame.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-          const reachable = box && box.left >= 0 && box.top >= 0
-            && box.right <= viewport.width && box.bottom <= viewport.height;
-          if (reachable) await toggle.click();
+          const viewport = page.viewportSize()!;
+          expect(box, 'The native document menu must have a real hit box').not.toBeNull();
+          expect(box!.x).toBeGreaterThanOrEqual(0);
+          expect(box!.y).toBeGreaterThanOrEqual(0);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+          expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+          await toggle.click();
         }
-        if (await body.evaluate(element => element.classList.contains('close'))) {
-          await expect.poll(() => frame.locator('.sidebar').evaluate(element => {
-            const rect = element.getBoundingClientRect();
-            return rect.left >= -1 && rect.right <= innerWidth + 1;
-          })).toBe(true);
-        }
+        await expect(body).toHaveClass(/\bclose\b/);
+        await expect.poll(() => frame.locator('.sidebar').evaluate(element => {
+          const rect = element.getBoundingClientRect();
+          return rect.left >= -1 && rect.right <= innerWidth + 1;
+        })).toBe(true);
         await frame.locator('[data-aibiz-api-search]').scrollIntoViewIfNeeded();
       }
       const apiSearch = frame.locator('[data-aibiz-api-search]');
       await expect(apiSearch).toBeVisible();
       await apiSearch.fill(english ? 'Access Password' : '访问密码');
       await expect(frame.locator('[data-aibiz-api-results] a').first()).toBeVisible();
-      if ((page.viewportSize()?.width ?? 1440) < 768) await apiSearch.press('Enter');
-      else await frame.locator('[data-aibiz-api-results] a').first().click();
+      await frame.locator('[data-aibiz-api-results] a').first().click();
       await expect(frame.locator('.markdown-section').first()).toContainText(english ? 'Access Password' : '访问密码');
       await assertRawGate('native-menu-iframe');
       evidence.stages.nativeMenuEmbedding = { status: 'PASS', parentUrl: page.url(),
