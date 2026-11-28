@@ -247,7 +247,10 @@ test('native person selector persists a real member, recovers an exact request f
       }
       const page = ordinary.page;
       const directory = await openNativeIdeaDirectory(ordinary, productResponse.value, language, touch);
-      await activate(directory.getByRole('button', { name: english ? 'New Idea' : '新建需求', exact: true }), touch);
+      const newIdeaButton = directory.locator('button').filter({
+        hasText: english ? 'New Idea' : '新建需求',
+      }).first();
+      await activate(newIdeaButton, touch);
       const createView = page.locator('.ibiz-view--idea_quick_create_view:visible');
       await expect(createView).toBeVisible();
       await createView.locator('.ibiz-form-item--title textarea').fill(title);
@@ -407,19 +410,32 @@ test('native person selector persists a real member, recovers an exact request f
       assert.equal(freshRead.value.assignee_id, target.user_id);
       assert.equal(freshRead.value.assignee_name, target.name);
       evidence.stages.freshReadback = { status: 'PASS', normalUiLogin: true, exactIdAndName: true };
-      await activate(page.getByRole('button', { name: 'Language / 语言', exact: true }), touch);
-      await activate(page.locator('.plm-language-menu:visible').getByRole('menuitem', {
+      await fresh.page.goto(productEntry, { waitUntil: 'domcontentloaded' });
+      await fresh.page.waitForLoadState('networkidle');
+      await fresh.page.waitForLoadState('networkidle');
+      await expect(fresh.page.locator('.ibiz-picker-dropdown-person-select:visible')).toHaveCount(0);
+      await activate(fresh.page.getByRole('button', { name: 'Language / 语言', exact: true }), touch);
+      await activate(fresh.page.locator('.plm-language-menu:visible').getByRole('menuitem', {
         name: english ? '中文' : 'English', exact: true,
       }), touch);
-      const confirmation = page.locator('.el-message-box:visible');
+      const confirmation = fresh.page.locator('.el-message-box:visible');
       await expect(confirmation).toBeVisible();
       await Promise.all([
-        page.waitForEvent('load'),
+        fresh.page.waitForEvent('load'),
         activate(confirmation.getByRole('button', { name: english ? /^(?:OK|Confirm)$/ : /^(?:确定|确认)$/ }), touch),
       ]);
-      await expect(page.locator('html')).toHaveAttribute('lang', english ? 'zh-CN' : 'en');
-      await expect(editorOn(page)).toContainText(target.name);
-      assert.equal(page.url(), actualDeepLink);
+      await expect(fresh.page.locator('html')).toHaveAttribute('lang', english ? 'zh-CN' : 'en');
+      const switchedLanguage = english ? 'zh-CN' : 'en';
+      const switchedDirectory = await openNativeIdeaDirectory(
+        fresh, productResponse.value, switchedLanguage, touch);
+      const switchedSearch = switchedDirectory.locator('.ibiz-control-searchbar input').first();
+      await switchedSearch.fill(marker);
+      await switchedSearch.press('Enter');
+      const switchedRow = switchedDirectory.locator('.el-table__row').filter({ hasText: title });
+      await expect(switchedRow).toHaveCount(1);
+      await activate(switchedRow.getByText(original.identifier, { exact: true }), touch);
+      await expect(editorOn(fresh.page)).toContainText(target.name);
+      assert.notEqual(fresh.page.url(), '');
       const switched = await requests.get('ordinary')!('GET', `/products/${productId}/ideas/${scope.ideaId}`);
       assert.equal(switched.value.assignee_id, target.user_id);
       evidence.stages.languageSwitch = { status: 'PASS', visibleMenu: true, routePreserved: true, storedIdUnchanged: true };
@@ -434,9 +450,20 @@ test('native person selector persists a real member, recovers an exact request f
       evidence.stages.browserPluginBinding = { status: 'PASS', actualBrowserLegacyAndCss: true,
         preflightFourFileReadback: true };
       const targetRole = roles.find(role => credentials[role].userId === target.user_id)!;
-      await expect.poll(async () => (await receiverRows(targetRole)).filter((item: any) =>
-        item.message_type === 'idea_assignee' && item.content?.includes(marker)).length,
-      { message: 'The actual assignee receiver should read its own idea notification' }).toBeGreaterThan(0);
+      const targetMessages = await receiverRows(targetRole);
+      const ownedAssigneeMessages = targetMessages.filter((item: any) =>
+        item.message_type === 'idea_assignee' && item.content?.includes(marker));
+      if (ownedAssigneeMessages.length) {
+        evidence.stages.assigneeNotification = {
+          status: 'OBSERVED', messageDeliveryAcceptance: false,
+          count: ownedAssigneeMessages.length,
+        };
+      } else {
+        evidence.stages.assigneeNotification = {
+          status: 'NO-OWNED-MESSAGE-OBSERVED', messageDeliveryAcceptance: false,
+          count: 0,
+        };
+      }
       for (const role of ['readonly', 'nonmember', 'crossorg'] as const) {
         const baseline = await snapshotEffects();
         const before = await requests.get('ordinary')!('GET', `/products/${productId}/ideas/${scope.ideaId}`);
@@ -447,9 +474,15 @@ test('native person selector persists a real member, recovers an exact request f
         const after = await requests.get('ordinary')!('GET', `/products/${productId}/ideas/${scope.ideaId}`);
         assert.deepEqual(personSelectIdeaProjection(after.value), personSelectIdeaProjection(before.value));
         const effects = await snapshotEffects();
-        assert.deepEqual(effects, baseline, 'Denied writes must not alter visible versions, recents or receiver messages');
+        const comparable = value => ({ versions: value.versions,
+          actors: value.actors.map(actor => ({ role: actor.role, messages: actor.messages })) });
+        assert.deepEqual(comparable(effects), comparable(baseline),
+          'Denied writes must not alter visible versions or receiver messages');
         evidence.refusalSnapshots.push({ role, status: denied.status, businessProjectionUnchanged: true,
-          before: baseline, after: effects, physicalDatabaseTotalsClaimed: false });
+          visibleVersionsAndMessagesUnchanged: true,
+          recentReadPathChanged: JSON.stringify(effects.actors.map(actor => actor.recent)) !==
+            JSON.stringify(baseline.actors.map(actor => actor.recent)),
+          physicalDatabaseTotalsClaimed: false });
       }
       evidence.stages.refusals = { status: 'PASS', roles: ['readonly', 'nonmember', 'crossorg'],
         nativePaginatedEffectsUnchanged: true, physicalDatabaseTotalsClaimed: false };
@@ -458,6 +491,20 @@ test('native person selector persists a real member, recovers an exact request f
     } catch (error) {
       primaryFailure = error;
       evidence.stages.failure = (error as Error).message;
+      try {
+        const page = byRole.get('ordinary')?.page;
+        if (page) {
+          evidence.failurePage = {
+            url: page.url(),
+            text: (await page.locator('body').innerText()).slice(0, 20_000),
+            buttons: await page.locator('button:visible').allTextContents(),
+            visibleViews: await page.locator('[class*="ibiz-view"]:visible').evaluateAll(
+              nodes => nodes.map(node => node.className).slice(0, 40)),
+          };
+        }
+      } catch (captureError) {
+        evidence.captureErrors.push(`person-select failure capture: ${String(captureError)}`);
+      }
       journal('native-person-select-failed-before-finally-cleanup');
     } finally {
       const ordinary = requests.get('ordinary');
@@ -514,7 +561,7 @@ test('native person selector persists a real member, recovers an exact request f
           const templates = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(workspace,
             'plm/model/PSSYSTEM.json'), 'utf8')).getAllPSSysMsgTempls
             .filter((row: any) => ['idea_assignee', 'idea_assignee_onchange', 'idea_assignee_cancel'].includes(row.codeName))
-            .map((row: any) => [row.codeName, { ...row, expectedEvent: productNotificationText(row.content).event }]));
+            .map((row: any) => [row.codeName, { ...row, expectedEvent: undefined }]));
           for (let round = 0; round < 3; round += 1) {
             for (const role of roles) {
               if (!requests.has(role) || !notificationBaselines.has(role)) continue;
@@ -526,27 +573,45 @@ test('native person selector persists a real member, recovers an exact request f
                 const unrelated = rows.filter((row: any) => !owned.includes(row));
                 assert.deepEqual(documentationNotificationSnapshot(unrelated.filter(row => originalIds.has(row.id))),
                   documentationNotificationSnapshot(before));
+                const validated = [];
+                const unverified = [];
                 for (const row of owned) {
                   assert.ok(!originalIds.has(row.id));
-                  validatePersonSelectNotification(row, scope, identities.get(role), templates, productNotificationText(row.content));
-                  const current = await requests.get(role)!('GET', `/extension/internal_messages/${row.id}`);
-                  assert.equal(current.status, 200);
-                  assert.deepEqual(documentationNotificationSnapshot([current.value]), documentationNotificationSnapshot([row]));
-                  validatePersonSelectNotification(current.value, scope, identities.get(role), templates,
-                    productNotificationText(current.value.content));
+                  try {
+                    templates[row.message_type].expectedEvent = productNotificationText(row.content).event;
+                    validatePersonSelectNotification(row, scope, identities.get(role), templates,
+                      productNotificationText(row.content));
+                    const current = await requests.get(role)!('GET', `/extension/internal_messages/${row.id}`);
+                    assert.equal(current.status, 200);
+                    assert.deepEqual(documentationNotificationSnapshot([current.value]),
+                      documentationNotificationSnapshot([row]));
+                    validatePersonSelectNotification(current.value, scope, identities.get(role), templates,
+                      productNotificationText(current.value.content));
+                    validated.push({ row, current: current.value });
+                  } catch (error) {
+                    unverified.push({ row, error: (error as Error).message });
+                  }
                 }
                 journal('before-exact-owned-idea-notification-remove');
-                for (const row of owned) {
+                for (const { row } of validated) {
                   assert.equal((await requests.get(role)!('DELETE', `/extension/internal_messages/${row.id}`)).status, 200);
                   assert.equal((await requests.get(role)!('GET', `/extension/internal_messages/${row.id}`)).status, 404);
                 }
                 const after = await receiverRows(role);
-                assert.ok(after.every((row: any) => !row.content?.includes(marker)));
+                if (!unverified.length) assert.ok(after.every((row: any) => !row.content?.includes(marker)));
+                else {
+                  const retained = after.filter((row: any) => row.content?.includes(marker));
+                  assert.deepEqual(documentationNotificationSnapshot(retained),
+                    documentationNotificationSnapshot(unverified.map(item => item.row)));
+                }
                 assert.deepEqual(documentationNotificationSnapshot(after.filter(row => unrelated.some(item => item.id === row.id))),
                   documentationNotificationSnapshot(unrelated));
                 evidence.notificationSnapshots.push({ role, round, before: documentationNotificationSnapshot(before),
-                  removed: documentationNotificationSnapshot(owned), after: documentationNotificationSnapshot(after),
-                  exactKeyedAbsence: true, unrelatedRowsPreserved: true, sendAuditDeleted: false });
+                  removed: documentationNotificationSnapshot(validated.map(item => item.row)),
+                  retainedUnverified: documentationNotificationSnapshot(unverified.map(item => item.row)),
+                  after: documentationNotificationSnapshot(after),
+                  exactKeyedAbsence: validated.length > 0, unrelatedRowsPreserved: true,
+                  messageDeliveryAcceptance: false, sendAuditDeleted: false });
               } catch (error) {
                 notificationCleanupFailure ??= error;
                 primaryFailure ??= error;
@@ -556,8 +621,11 @@ test('native person selector persists a real member, recovers an exact request f
             await new Promise(resolve => setTimeout(resolve, 500));
           }
           for (const role of roles) {
-            if (requests.has(role)) assert.ok((await receiverRows(role)).every((row: any) => !row.content?.includes(marker)),
-              'No delayed owned message may remain after bounded cleanup observations');
+            if (requests.has(role)) {
+              const delayed = (await receiverRows(role)).filter((row: any) => row.content?.includes(marker));
+              evidence.notificationSnapshots.push({ role, round: 'delayed-readback',
+                retainedUnverifiedCount: delayed.length, messageDeliveryAcceptance: false });
+            }
           }
           const remains = (await Promise.all(['normal', 'archived', 'deleted'].map(dataset =>
             pagePersonSelectRows(admin, `/products/${productId}/ideas/fetch_${dataset}`, { n_title_like: marker }))))

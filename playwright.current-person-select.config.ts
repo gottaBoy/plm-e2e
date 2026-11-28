@@ -15,7 +15,15 @@ for (let current = artifacts; ; current = path.dirname(current)) {
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Artifact ancestry must contain real directories');
   if (current === path.dirname(current)) break;
 }
-fs.mkdirSync(artifactDir, { mode: 0o700 });
+if (process.env.PLM_CURRENT_PERSON_SELECT_CONFIG_INITIALIZED !== '1') {
+  if (fs.existsSync(artifactDir) && fs.readdirSync(artifactDir).length) {
+    throw new Error('A current-person-select artifact directory must be new and empty');
+  }
+  fs.mkdirSync(artifactDir, { mode: 0o700, recursive: true });
+  process.env.PLM_CURRENT_PERSON_SELECT_CONFIG_INITIALIZED = '1';
+} else if (!fs.existsSync(artifactDir)) {
+  fs.mkdirSync(artifactDir, { mode: 0o700 });
+}
 process.env.PLM_CURRENT_PERSON_SELECT_ARTIFACT_DIR = artifactDir;
 
 export default defineConfig({
